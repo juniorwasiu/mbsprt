@@ -106,7 +106,7 @@ body {
 .cloud-status {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 0.82rem;
   color: var(--green);
   background: rgba(53, 212, 154, 0.1);
@@ -117,11 +117,17 @@ body {
 }
 
 .cloud-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--green);
   box-shadow: 0 0 8px var(--green);
+  animation: pulse-dot 1.8s infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
 }
 
 /* Container */
@@ -253,8 +259,8 @@ body {
 
 .mode-card.active {
   border-color: var(--accent);
-  background: linear-gradient(145deg, rgba(139, 124, 255, 0.12) 0%, rgba(21, 24, 36, 0.95) 100%);
-  box-shadow: 0 12px 32px rgba(139, 124, 255, 0.2);
+  background: linear-gradient(145deg, rgba(139, 124, 255, 0.15) 0%, rgba(21, 24, 36, 0.95) 100%);
+  box-shadow: 0 12px 32px rgba(139, 124, 255, 0.25);
 }
 
 .mode-card-header {
@@ -580,7 +586,7 @@ input:checked + .slider:before {
   <div class="nav-actions">
     <div class="cloud-status" id="cloud-status-badge">
       <span class="cloud-dot"></span>
-      <span id="cloud-status-text">Firebase Realtime Live</span>
+      <span id="cloud-status-text">Firebase Connected (Real-Time)</span>
     </div>
     <a href="./index.html" target="_blank" class="btn-secondary" title="Open live public view">
       <span>Open Live Site</span>
@@ -609,22 +615,22 @@ input:checked + .slider:before {
   <!-- MAIN ADMIN DASHBOARD -->
   <div id="dashboard-section" class="dashboard-grid" style="display: none;">
 
-    <!-- SECTION 1: MODE SWITCHER -->
+    <!-- SECTION 1: ACTIVE DISPLAY MODE SWITCHER -->
     <div>
       <div class="section-header">
         <h2 class="section-title">
           <span>Active Display Mode</span>
         </h2>
-        <p class="section-desc">Select what visitors see when they open the main website URL.</p>
+        <p class="section-desc">Select what visitors see when they open the main website URL. <b>Changes apply instantly in real-time across all visitors.</b></p>
       </div>
 
       <div class="mode-grid">
         <!-- MODE 1: CONTINUE TO DOWNLOAD -->
-        <div class="mode-card" id="card-mode-download" onclick="selectMode('download')">
+        <div class="mode-card" id="card-mode-download" onclick="handleModeClick('download')">
           <div>
             <div class="mode-card-header">
               <div class="mode-icon">🚀</div>
-              <span class="active-pill">ACTIVE</span>
+              <span class="active-pill">ACTIVE NOW</span>
             </div>
             <h3 class="mode-name">Continue to Download</h3>
             <p class="mode-desc">Shows a direct "Continue to Download" hero button leading directly to the mobile app link.</p>
@@ -638,11 +644,11 @@ input:checked + .slider:before {
         </div>
 
         <!-- MODE 2: TASK GUIDE -->
-        <div class="mode-card" id="card-mode-task" onclick="selectMode('task')">
+        <div class="mode-card" id="card-mode-task" onclick="handleModeClick('task')">
           <div>
             <div class="mode-card-header">
               <div class="mode-icon">📋</div>
-              <span class="active-pill">ACTIVE</span>
+              <span class="active-pill">ACTIVE NOW</span>
             </div>
             <h3 class="mode-name">App Registration Task Guide</h3>
             <p class="mode-desc">Shows the full step-by-step worker task instructions, VPN warning, and referral code copy button.</p>
@@ -734,7 +740,7 @@ input:checked + .slider:before {
       <div class="preview-header">
         <div>
           <h3 style="font-size: 1.1rem; font-weight: 800;">Live Visitor Preview</h3>
-          <p style="color: var(--muted); font-size: 0.85rem;">Interactive preview of what users currently see.</p>
+          <p style="color: var(--muted); font-size: 0.85rem;">Real-time interactive preview of what visitors see.</p>
         </div>
         <button class="btn-secondary" onclick="refreshPreview()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -820,9 +826,22 @@ function populateForm(config) {
   document.getElementById('setting-vpn-warning').value = config.vpnWarning || '';
 }
 
-function selectMode(mode) {
+// Instant Mode Switch: updates UI AND saves to Firestore immediately
+async function handleModeClick(mode) {
   selectedMode = mode;
   updateModeUi(mode);
+
+  const modeName = mode === 'download' ? 'Continue to Download' : 'App Task Guide';
+  showToast(`Switching mode to ${modeName}...`, '⏳');
+
+  const result = await window.appConfig.setMode(mode);
+  if (result && result.cloudSaved) {
+    showToast(`⚡ Active mode switched to "${modeName}" in realtime!`, '🔥');
+  } else {
+    showToast(`Active mode set to "${modeName}"`, '✓');
+  }
+
+  refreshPreview();
 }
 
 function updateModeUi(mode) {
@@ -914,13 +933,14 @@ function copyConfigJson() {
   });
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   // Listen for live config updates from Firebase
   window.appConfig.onConfigChange((cfg) => {
     currentConfig = cfg;
     if (sessionStorage.getItem('sprt_admin_auth') === 'true') {
       selectedMode = cfg.mode || 'download';
       updateModeUi(selectedMode);
+      populateForm(cfg);
     }
   });
 
@@ -930,10 +950,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const badgeEl = document.getElementById('cloud-status-badge');
     if (textEl && badgeEl) {
       if (ready) {
-        textEl.textContent = 'Firebase Realtime Live';
+        textEl.textContent = 'Firebase Connected (Real-Time)';
         badgeEl.style.borderColor = 'rgba(53, 212, 154, 0.4)';
+        badgeEl.style.color = 'var(--green)';
       } else {
-        textEl.textContent = 'Connecting...';
+        textEl.textContent = 'Connecting to Firebase...';
+        badgeEl.style.borderColor = 'rgba(255, 215, 107, 0.4)';
+        badgeEl.style.color = 'var(--amber)';
       }
     }
   });

@@ -17,15 +17,15 @@ const DEFAULT_CONFIG = {
   updatedAt: Date.now()
 };
 
-const STORAGE_KEY = "sprt_site_config_v3";
+const STORAGE_KEY = "sprt_site_config_v4";
 
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyAJxyAOpMQkA0nrVn08-cDjsHcyCtq0Ghk",
-  authDomain: "mbsprt-d435e.firebaseapp.com",
-  projectId: "mbsprt-d435e",
-  storageBucket: "mbsprt-d435e.firebasestorage.app",
-  messagingSenderId: "31403417716",
-  appId: "1:31403417716:web:2d85debe2bae16f7507121"
+  apiKey: "AIzaSyBWWXPq-DsPJbfg0i6yLgX1Ruzf1CSYk4A",
+  authDomain: "sprt-9a37b.firebaseapp.com",
+  projectId: "sprt-9a37b",
+  storageBucket: "sprt-9a37b.firebasestorage.app",
+  messagingSenderId: "786883085986",
+  appId: "1:786883085986:web:e3f6ab649f306c5aa0b9fb"
 };
 
 class AppConfigManager {
@@ -37,12 +37,26 @@ class AppConfigManager {
     this.docRef = null;
     this.unsubscribe = null;
     this.firebaseReady = false;
-    this.initialLoadDone = false;
+    this.isReady = false;
 
-    // Load fast cached config from LocalStorage first for instant paint
+    // Ready promise to ensure page never renders incorrect initial mode
+    this._resolveReady = null;
+    this.readyPromise = new Promise((resolve) => {
+      this._resolveReady = resolve;
+    });
+
+    // Fallback safety timeout: resolve ready after 1200ms if network is slow/offline
+    setTimeout(() => {
+      if (!this.isReady) {
+        this.isReady = true;
+        if (this._resolveReady) this._resolveReady(this.config);
+      }
+    }, 1200);
+
+    // 1. Read cached config from LocalStorage as fallback
     this.loadFromLocalStorage();
 
-    // Initialize Firebase in background
+    // 2. Initialize Firebase and Firestore realtime listener
     this.initFirebase();
   }
 
@@ -66,6 +80,11 @@ class AppConfigManager {
     }
   }
 
+  // Returns a promise that resolves as soon as the authoritative Firestore config is loaded
+  whenReady() {
+    return this.readyPromise;
+  }
+
   // Check URL query parameters for test overrides (e.g. ?mode=download or ?mode=task)
   getUrlOverride() {
     try {
@@ -84,7 +103,23 @@ class AppConfigManager {
   async initFirebase() {
     try {
       if (typeof firebase === "undefined") {
-        console.warn("[AppConfig] Firebase SDK not loaded in window. Waiting for script...");
+        console.warn("[AppConfig] Firebase SDK not yet loaded. Retrying...");
+        let attempts = 0;
+        const checkInterval = setInterval(() => {
+          attempts++;
+          if (typeof firebase !== "undefined") {
+            clearInterval(checkInterval);
+            this.initFirebase();
+          } else if (attempts > 20) {
+            clearInterval(checkInterval);
+            console.error("[AppConfig] Firebase SDK script load timeout.");
+            this.notifyStatus(false);
+            if (!this.isReady) {
+              this.isReady = true;
+              if (this._resolveReady) this._resolveReady(this.config);
+            }
+          }
+        }, 100);
         return;
       }
 
@@ -94,13 +129,11 @@ class AppConfigManager {
 
       this.db = firebase.firestore();
 
-      // Enable offline persistence if supported
+      // Enable offline persistence gracefully if supported
       try {
         await this.db.enablePersistence({ synchronizeTabs: true });
       } catch (err) {
-        if (err.code !== "failed-precondition" && err.code !== "unimplemented") {
-          console.debug("[AppConfig] Firestore persistence notice:", err.message);
-        }
+        // Safe to ignore in incognito / multi-tab
       }
 
       this.docRef = this.db.collection("settings").doc("app_config");
@@ -112,6 +145,10 @@ class AppConfigManager {
     } catch (err) {
       console.error("[AppConfig] Firebase init failed:", err);
       this.notifyStatus(false);
+      if (!this.isReady) {
+        this.isReady = true;
+        if (this._resolveReady) this._resolveReady(this.config);
+      }
     }
   }
 
@@ -133,57 +170,43 @@ class AppConfigManager {
               ...cloudData
             };
 
-            // Apply URL test override if specified in URL
+            // Apply URL test override if specified
             const urlOverride = this.getUrlOverride();
             if (urlOverride) {
               this.config = { ...this.config, ...urlOverride };
             }
 
             this.saveToLocalStorage(this.config);
-            this.initialLoadDone = true;
-            this.notifyListeners();
+
+            if (!this.isReady) {
+              this.isReady = true;
+              if (this._resolveReady) this._resolveReady(this.config);
+            }
+
+            this.notifyListeners(true);
           }
         } else {
           // Document doesn't exist yet in Firestore, seed it with default config
-          this.docRef.set(this.config, { merge: true }).catch((e) => {
+          this.docRef.set(DEFAULT_CONFIG, { merge: true }).catch((e) => {
             console.warn("[AppConfig] Error seeding initial Firestore doc:", e);
           });
-          this.initialLoadDone = true;
-          this.notifyListeners();
+          this.config = { ...DEFAULT_CONFIG };
+          if (!this.isReady) {
+            this.isReady = true;
+            if (this._resolveReady) this._resolveReady(this.config);
+          }
+          this.notifyListeners(true);
         }
       },
       (error) => {
         console.warn("[AppConfig] Firestore realtime listener warning:", error);
+        this.notifyStatus(false);
+        if (!this.isReady) {
+          this.isReady = true;
+          if (this._resolveReady) this._resolveReady(this.config);
+        }
       }
     );
-  }
-
-  // Load config asynchronously (returns current active state)
-  async loadConfig() {
-    // If Firebase is already initialized and snapshot is active, return current
-    if (this.firebaseReady && this.docRef) {
-      try {
-        const snap = await this.docRef.get();
-        if (snap.exists) {
-          const data = snap.data();
-          this.config = { ...DEFAULT_CONFIG, ...data };
-        }
-      } catch (e) {
-        console.warn("[AppConfig] Direct get fallback to cache:", e);
-      }
-    } else if (typeof firebase !== "undefined" && !this.firebaseReady) {
-      await this.initFirebase();
-    }
-
-    // Apply URL override if present
-    const urlOverride = this.getUrlOverride();
-    if (urlOverride) {
-      this.config = { ...this.config, ...urlOverride };
-    }
-
-    this.initialLoadDone = true;
-    this.notifyListeners();
-    return this.config;
   }
 
   // Save updated config to Firebase Firestore in real-time
@@ -196,7 +219,7 @@ class AppConfigManager {
 
     // Save locally
     this.saveToLocalStorage(this.config);
-    this.notifyListeners();
+    this.notifyListeners(false);
 
     let cloudSaved = false;
 
@@ -216,14 +239,22 @@ class AppConfigManager {
     return { success: true, cloudSaved, config: this.config };
   }
 
+  // Instant mode switcher helper
+  async setMode(mode) {
+    if (mode !== "download" && mode !== "task") return;
+    return await this.saveConfig({ mode });
+  }
+
   getConfig() {
     return { ...this.config };
   }
 
   onConfigChange(callback) {
     this.listeners.push(callback);
-    // Trigger immediately with current available state
-    callback(this.config);
+    // If initial config is already resolved, trigger immediately
+    if (this.isReady) {
+      callback(this.config, false);
+    }
   }
 
   onStatusChange(callback) {
@@ -241,10 +272,10 @@ class AppConfigManager {
     }
   }
 
-  notifyListeners() {
+  notifyListeners(fromCloud = false) {
     for (const listener of this.listeners) {
       try {
-        listener(this.config);
+        listener(this.config, fromCloud);
       } catch (e) {
         console.error("[AppConfig] Listener error", e);
       }

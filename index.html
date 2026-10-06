@@ -278,11 +278,15 @@ li:first-child {
   padding: 30px 16px;
   max-width: 520px;
   margin: 20px auto 0;
-  animation: fadeIn 0.4s ease-out;
+  animation: viewFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(12px); }
+.task-view-container {
+  animation: viewFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes viewFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -440,18 +444,19 @@ footer {
 
 /* Loading skeleton */
 .loading-view {
-  min-height: 280px;
+  min-height: 320px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   color: var(--muted);
   font-weight: 600;
-  gap: 12px;
+  gap: 16px;
 }
 
 .spinner {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   border: 3px solid rgba(139, 124, 255, 0.2);
   border-top-color: var(--accent);
   border-radius: 50%;
@@ -466,6 +471,7 @@ footer {
 <body>
 
 <main class="wrap" id="main-container">
+  <!-- SKELETON / LOADING STATE -->
   <div class="loading-view" id="loading-state">
     <div class="spinner"></div>
     <span>Loading...</span>
@@ -514,7 +520,7 @@ footer {
   </div>
 
   <!-- VIEW 2: ORIGINAL APP REGISTRATION TASK VIEW -->
-  <div id="view-task" style="display: none;">
+  <div id="view-task" class="task-view-container" style="display: none;">
     <div class="header">
       <h1 id="task-title-text">App Registration Task</h1>
       <p class="sub" id="task-sub-text">Follow the steps in order. Earn a $1 bonus.</p>
@@ -595,6 +601,7 @@ let redirectTimer = null;
 
 function renderPage(config) {
   if (!config) return;
+
   const loadingEl = document.getElementById('loading-state');
   const viewDownload = document.getElementById('view-download');
   const viewTask = document.getElementById('view-task');
@@ -707,12 +714,16 @@ function copyCode() {
   });
 }
 
-// Initialize on DOM load
-document.addEventListener('DOMContentLoaded', () => {
-  // Listen for real-time config changes from Firebase
+// Initialize on DOM load: wait for authoritative config to prevent any mode flicker/glitch
+document.addEventListener('DOMContentLoaded', async () => {
+  // Listen for subsequent real-time changes
   window.appConfig.onConfigChange((cfg) => {
     renderPage(cfg);
   });
+
+  // Wait for initial authoritative Firebase load
+  const initialConfig = await window.appConfig.whenReady();
+  renderPage(initialConfig);
 });
 </script>
 </body>
