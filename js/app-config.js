@@ -20,13 +20,12 @@ const DEFAULT_CONFIG = {
 const STORAGE_KEY = "sprt_site_config_v3";
 
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDlLjchxFjMx14xnisrZ6w91Oz44UKOuqg",
-  authDomain: "sbb2-e04b6.firebaseapp.com",
-  projectId: "sbb2-e04b6",
-  storageBucket: "sbb2-e04b6.firebasestorage.app",
-  messagingSenderId: "258334430487",
-  appId: "1:258334430487:web:cf15dda3df12f8bfd31352",
-  measurementId: "G-1KJYVH7CD3"
+  apiKey: "AIzaSyAJxyAOpMQkA0nrVn08-cDjsHcyCtq0Ghk",
+  authDomain: "mbsprt-d435e.firebaseapp.com",
+  projectId: "mbsprt-d435e",
+  storageBucket: "mbsprt-d435e.firebasestorage.app",
+  messagingSenderId: "31403417716",
+  appId: "1:31403417716:web:2d85debe2bae16f7507121"
 };
 
 class AppConfigManager {
